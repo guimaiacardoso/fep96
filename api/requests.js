@@ -22,15 +22,20 @@ export default async function handler(req,res) {
     }
     if(!configAdmin(res)) return;
     if(!isAdmin(req)) return json(res,401,{error:'unauthorized'});
-    const id=String(req.query?.id||'');
+    const id=String(req.query?.id||''); const trackId=String(req.query?.track||'');
+    // Âmbito: um pedido (id) ou todos os pedidos de uma música (track = Spotify track id).
+    const scope = trackId
+      ? (/^[A-Za-z0-9]{10,30}$/.test(trackId) ? `track->>id=eq.${trackId}` : null)
+      : (id ? `id=eq.${encodeURIComponent(id)}` : null);
     if(req.method==='PATCH') {
       const body=parseBody(req); const patch={}; if(typeof body.played==='boolean') patch.played=body.played;
       if(!Object.keys(patch).length) return json(res,400,{error:'invalid_update'});
-      await db(`requests?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify(patch)}); return json(res,200,{ok:true});
+      if(!scope) return json(res,400,{error:'missing_id'});
+      await db(`requests?${scope}`,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify(patch)}); return json(res,200,{ok:true});
     }
     if(req.method==='DELETE') {
       if(id==='all') await db('requests?id=not.is.null',{method:'DELETE',headers:{Prefer:'return=minimal'}});
-      else if(id) await db(`requests?id=eq.${encodeURIComponent(id)}`,{method:'DELETE',headers:{Prefer:'return=minimal'}});
+      else if(scope) await db(`requests?${scope}`,{method:'DELETE',headers:{Prefer:'return=minimal'}});
       else return json(res,400,{error:'missing_id'});
       return json(res,200,{ok:true});
     }
