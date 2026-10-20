@@ -149,6 +149,9 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #fff;
 .chip.synced{background:var(--ok-bg);color:var(--ok)}
 .chip.syncing{background:var(--chip);color:#5a4a4d}
 .chip.failed{background:var(--err-bg);color:var(--err)}
+.who{margin-top:6px;font-size:14px;color:var(--ink);line-height:1.5}
+.who .sep{color:var(--muted);margin:0 6px}
+.who .when{color:var(--muted);font-size:13px}
 .err-hint{margin-top:7px;font-size:13px;color:var(--err);line-height:1.4}
 .request-actions{display:flex;flex-direction:column;gap:8px;flex-shrink:0;width:112px}
 .request-actions .btn{width:100%;min-height:40px;padding:8px 12px;font-size:14px}
@@ -276,7 +279,6 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #fff;
     syncing: { cls: 'syncing', label: 'A sincronizar' },
     pending: { cls: 'syncing', label: 'A sincronizar' }
   };
-  const FILTERS = { all: () => true, pending: r => !r.played, played: r => r.played };
   const SYNC_ERRORS = {
     spotify_forbidden: 'Sem permissão na playlist. Confirma que a playlist pertence à conta DJ.',
     spotify_unauthorized: 'A ligação ao Spotify expirou. Volta a autorizar o Spotify.',
@@ -455,7 +457,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #fff;
     try {
       const list = await api('/api/requests');
       state.requests = list;
-      $('count').textContent = `${list.filter(r => !r.played).length} por tocar · ${list.length} pedidos`;
+      $('count').textContent = `${groupByTrack(list).filter(g => g.pending).length} por tocar · ${list.length} pedidos`;
       $('clear').disabled = list.length === 0;
       const snapshot = JSON.stringify(list);
       if (snapshot !== state.snapshot) {
@@ -473,32 +475,36 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #fff;
     return Number.isNaN(t) ? 0 : t;
   }
 
-  function renderRequests() {
-    // Contagem por música, sobre todos os pedidos (independente do filtro).
-    const counts = new Map();
-    const latest = new Map();
-    for (const r of state.requests) {
+  // Uma entrada por música, com todos os pedidos dessa música.
+  function groupByTrack(list) {
+    const groups = new Map();
+    for (const r of list) {
       const id = r.track?.id;
-      counts.set(id, (counts.get(id) || 0) + 1);
-      latest.set(id, Math.max(latest.get(id) || 0, ts(r)));
+      if (!groups.has(id)) groups.set(id, { id, track: r.track, requests: [], latest: 0 });
+      const g = groups.get(id);
+      g.requests.push(r);
+      g.latest = Math.max(g.latest, ts(r));
     }
+    for (const g of groups.values()) {
+      g.requests.sort((a, b) => ts(b) - ts(a));
+      g.pending = g.requests.some(r => !r.played);
+    }
+    return [...groups.values()];
+  }
 
-    const rows = state.requests.filter(FILTERS[state.filter]);
-    rows.sort((a, b) => {
-      if (state.sort === 'popular') {
-        const ia = a.track?.id, ib = b.track?.id;
-        return (counts.get(ib) - counts.get(ia))      // mais pedidas primeiro
-          || (latest.get(ib) - latest.get(ia))        // pedidos da mesma música ficam juntos
-          || (ts(b) - ts(a));                         // dentro da música, o mais recente primeiro
-      }
-      return ts(b) - ts(a);
-    });
+  function renderRequests() {
+    let groups = groupByTrack(state.requests);
+    if (state.filter === 'pending') groups = groups.filter(g => g.pending);
+    if (state.filter === 'played') groups = groups.filter(g => !g.pending);
+    groups.sort(state.sort === 'popular'
+      ? (a, b) => (b.requests.length - a.requests.length) || (b.latest - a.latest)
+      : (a, b) => b.latest - a.latest);
 
-    if (!rows.length) {
+    if (!groups.length) {
       $('requests').innerHTML = `<div class="empty">${emptyText()}</div>`;
       return;
     }
-    $('requests').innerHTML = `<ul class="list">${rows.map(r => requestRow(r, counts.get(r.track?.id) || 1)).join('')}</ul>`;
+    $('requests').innerHTML = `<ul class="list">${groups.map(groupRow).join('')}</ul>`;
   }
 
   function emptyText() {
@@ -507,46 +513,53 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #fff;
     return 'Ainda não há pedidos.';
   }
 
-  function requestRow(r, times) {
-    const sync = SYNC_LABELS[r.spotify_sync_status] || SYNC_LABELS.pending;
-    const badge = times > 1
-      ? `<span class="count-badge" role="img" aria-label="Pedida ${times} vezes">${times}<small>pedidos</small></span>`
+  function groupRow(g) {
+    const n = g.requests.length;
+    const failed = g.requests.find(r => r.spotify_sync_status === 'failed');
+    const busy = g.requests.some(r => r.spotify_sync_status === 'pending' || r.spotify_sync_status === 'syncing');
+    const sync = failed ? SYNC_LABELS.failed : busy ? SYNC_LABELS.syncing : SYNC_LABELS.synced;
+    const hint = failed
+      ? `<div class="err-hint">${esc(SYNC_ERRORS[failed.spotify_sync_error] || 'Erro do Spotify. Carrega em Sincronizar para repetir.')}</div>`
       : '';
-    const hint = r.spotify_sync_status === 'failed'
-      ? `<div class="err-hint">${esc(SYNC_ERRORS[r.spotify_sync_error] || 'Erro do Spotify. Carrega em Sincronizar para repetir.')}</div>`
+    const who = g.requests
+      .map(r => `<span class="who-name">${esc(r.requester)}</span> <span class="when">${esc(r.time)}</span>`)
+      .join('<span class="sep">·</span>');
+    const badge = n > 1
+      ? `<span class="count-badge" role="img" aria-label="Pedida ${n} vezes">${n}<small>pedidos</small></span>`
       : '';
     return `
       <li class="request">
         <div class="request-main">
-        ${badge}
-        <div class="request-info">
-          <div class="request-title">${esc(r.track?.name)}</div>
-          <div class="request-sub">${esc(r.track?.artist)} · ${esc(r.requester)} · ${esc(r.time)}</div>
-          <div class="chips">
-            <span class="chip ${r.played ? 'played' : 'pending'}">${r.played ? 'Tocada' : 'Por tocar'}</span>
-            <span class="chip ${sync.cls}">${sync.label}</span>
+          ${badge}
+          <div class="request-info">
+            <div class="request-title">${esc(g.track?.name)}</div>
+            <div class="request-sub">${esc(g.track?.artist)}</div>
+            <div class="who">${who}</div>
+            <div class="chips">
+              <span class="chip ${g.pending ? 'pending' : 'played'}">${g.pending ? 'Por tocar' : 'Tocada'}</span>
+              <span class="chip ${sync.cls}">${sync.label}</span>
+            </div>
+            ${hint}
           </div>
-          ${hint}
-        </div>
         </div>
         <div class="request-actions">
-          ${r.played ? '' : `<button class="btn btn-primary" type="button" data-play="${esc(r.id)}">Tocou</button>`}
-          <button class="btn btn-danger" type="button" data-remove="${esc(r.id)}" data-name="${esc(r.track?.name)}">Remover</button>
+          ${g.pending ? `<button class="btn btn-primary" type="button" data-play-track="${esc(g.id)}">Tocou</button>` : ''}
+          <button class="btn btn-danger" type="button" data-remove-track="${esc(g.id)}" data-name="${esc(g.track?.name)}" data-count="${n}">Remover</button>
         </div>
       </li>`;
   }
 
   $('requests').addEventListener('click', e => {
-    const play = e.target.closest('[data-play]');
-    const remove = e.target.closest('[data-remove]');
-    if (play) mutate(`/api/requests?id=${encodeURIComponent(play.dataset.play)}`, 'PATCH', { played: true });
-    else if (remove) removeRequest(remove.dataset.remove, remove.dataset.name);
+    const play = e.target.closest('[data-play-track]');
+    const remove = e.target.closest('[data-remove-track]');
+    if (play) mutate(`/api/requests?track=${encodeURIComponent(play.dataset.playTrack)}`, 'PATCH', { played: true }, 'Música marcada como tocada.');
+    else if (remove) removeTrack(remove.dataset.removeTrack, remove.dataset.name, Number(remove.dataset.count));
   });
 
-  async function mutate(url, method, body) {
+  async function mutate(url, method, body, message = 'Lista atualizada.') {
     try {
       await api(url, { method, body: body ? JSON.stringify(body) : undefined });
-      toast('Lista atualizada.');
+      toast(message);
       await loadRequests();
     } catch (e) {
       if (e.status === 401) {
@@ -558,9 +571,12 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #fff;
     }
   }
 
-  async function removeRequest(id, name) {
-    if (!confirm(`Remover "${name}"? A música continua na playlist Spotify.`)) return;
-    await mutate(`/api/requests?id=${encodeURIComponent(id)}`, 'DELETE');
+  async function removeTrack(trackId, name, n) {
+    const msg = n > 1
+      ? `Remover os ${n} pedidos de "${name}"? A música continua na playlist Spotify.`
+      : `Remover o pedido de "${name}"? A música continua na playlist Spotify.`;
+    if (!confirm(msg)) return;
+    await mutate(`/api/requests?track=${encodeURIComponent(trackId)}`, 'DELETE', undefined, 'Pedidos removidos da lista.');
   }
 
   $('filters').addEventListener('click', e => {
