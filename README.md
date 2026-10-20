@@ -71,7 +71,8 @@ Gera um segredo para `SESSION_SECRET` com um gestor de palavras-passe ou `openss
 
 ## Comportamento e limites
 
-- O painel mostra um círculo com o número de vezes que uma música foi pedida (quando é mais de uma) e permite ordenar por mais recentes ou por mais pedidas.
+- O painel mostra uma linha por música, com um círculo com o número de pedidos (quando é mais de um), a lista de quem pediu e a ordenação por mais recentes ou mais pedidas. "Tocou" e "Remover" aplicam-se a todos os pedidos dessa música.
+- Uma música já sincronizada por outro pedido não volta a ser adicionada à playlist.
 - Cada pedido aceite é sincronizado automaticamente. Se o Spotify falhar, o pedido fica registado com estado `failed` e pode ser tentada nova sincronização no painel.
 - A chave de idempotência protege contra reenvio do mesmo pedido com a mesma chave. A verificação da playlist reduz duplicações quando uma chamada ao Spotify falha depois de a faixa ter sido adicionada; como a API Spotify não oferece uma transação conjunta com a base de dados, uma falha de rede ambígua nunca pode garantir matematicamente entrega exatamente uma vez.
 - A verificação da playlist lê páginas de 50 faixas (limite máximo da API do Spotify para `/playlists/{id}/items`), até 100 páginas, para detetar a música antes de repetir uma sincronização.
