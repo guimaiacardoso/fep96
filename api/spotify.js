@@ -17,4 +17,3 @@ if (!sr.ok) { console.error('spotify_search', sr.status, sr.headers.get('retry-a
 return json(res,200,(sd.tracks?.items || []).map(t=>({id:t.id,name:t.name,artist:t.artists.map(a=>a.name).join(', '),album:t.album.name,image:t.album.images[1]?.url||t.album.images[0]?.url||null,uri:t.uri})));
 } catch (e) { console.error('spotify_exception', e); return json(res,502,{error:'spotify_unavailable'}); }
 }
-t
