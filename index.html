@@ -201,7 +201,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #fff;
         <input id="search" class="input" type="search" placeholder="Pesquisar música ou artista…" autocomplete="off" spellcheck="false" enterkeyhint="search">
       </div>
     </div>
-    <p id="hint" class="hint" aria-live="polite">Escreve pelo menos 2 caracteres para pesquisar.</p>
+    <p id="hint" class="hint" aria-live="polite">Escreve pelo menos 3 caracteres para pesquisar.</p>
     <ul id="results" class="results"></ul>
     <div class="foot">
       <button class="link" id="open-login" type="button">Painel DJ</button>
@@ -380,12 +380,12 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #fff;
     const q = $('search').value.trim();
     $('results').replaceChildren();
     state.results = [];
-    if (q.length < 2) { state.searchSeq++; setHint('Escreve pelo menos 2 caracteres para pesquisar.'); return; }
+    if (q.length < 3) { state.searchSeq++; setHint('Escreve pelo menos 3 caracteres para pesquisar.'); return; }
     setHint('A pesquisar…');
-    state.searchTimer = setTimeout(() => search(q), 350);
+    state.searchTimer = setTimeout(() => search(q), 800);
   });
 
-  async function search(q) {
+  $('search').addEventListener('keydown', e => { if (e.key !== 'Enter') return; e.preventDefault(); const q = $('search').value.trim(); if (q.length >= 3) { clearTimeout(state.searchTimer); search(q); } }); async function search(q) {
     const seq = ++state.searchSeq;
     try {
       const list = await api('/api/spotify?q=' + encodeURIComponent(q));
@@ -396,7 +396,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #fff;
     } catch (e) {
       if (seq !== state.searchSeq) return;
       setHint(e.code === 'spotify_search_not_configured'
-        ? 'A pesquisa ainda não está configurada.'
+        ? 'A pesquisa ainda não está configurada.' : e.code === 'spotify_rate_limited' ? 'Pesquisa temporariamente indisponível. Tenta mais tarde.'
         : 'Erro na pesquisa. Tenta novamente.');
     }
   }
